@@ -244,6 +244,39 @@
         // كلمة المرور الافتراضية
         const ADMIN_PASSWORD = "admin123";
         
+        // تهيئة IndexedDB
+        let db;
+        const DB_NAME = 'GamesDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'games';
+        
+        // فتح قاعدة البيانات
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        
+        request.onerror = function(event) {
+            console.error('فشل فتح قاعدة البيانات', event.target.error);
+        };
+        
+        request.onupgradeneeded = function(event) {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+            }
+        };
+        
+        request.onsuccess = function(event) {
+            db = event.target.result;
+            
+            // التحقق من حالة الدخول
+            const isLoggedIn = sessionStorage.getItem('isAdminLoggedIn');
+            
+            if (isLoggedIn === 'true') {
+                document.getElementById('loginContainer').style.display = 'none';
+                document.getElementById('adminPanel').style.display = 'block';
+                loadGamesForAdmin();
+            }
+        };
+        
         // التحقق من كلمة المرور
         function checkPassword() {
             const password = document.getElementById('adminPassword').value;
@@ -272,11 +305,26 @@
         
         // تحميل الألعاب للإدارة
         function loadGamesForAdmin() {
-            const games = JSON.parse(localStorage.getItem('games')) || [];
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.getAll();
+            
+            request.onerror = function(event) {
+                console.error('فشل جلب الألعاب', event.target.error);
+            };
+            
+            request.onsuccess = function(event) {
+                const games = event.target.result;
+                displayGamesForAdmin(games);
+            };
+        }
+        
+        // عرض الألعاب في لوحة التحكم
+        function displayGamesForAdmin(games) {
             const gamesList = document.getElementById('gamesList');
             gamesList.innerHTML = '';
             
-            if (games.length === 0) {
+            if (!games || games.length === 0) {
                 gamesList.innerHTML = '<p class="no-games">لا توجد ألعاب مضافة بعد</p>';
                 return;
             }
@@ -290,7 +338,7 @@
                         <p>${game.category} | ${game.desc}</p>
                     </div>
                     <div class="game-actions">
-                        <button onclick="deleteGame(${index})">حذف</button>
+                        <button onclick="deleteGame(${game.id})">حذف</button>
                     </div>
                 `;
                 gamesList.appendChild(gameItem);
@@ -315,49 +363,52 @@
                 category,
                 desc,
                 thumbnail,
-                url
+                url,
+                createdAt: new Date().toISOString()
             };
             
-            const games = JSON.parse(localStorage.getItem('games')) || [];
-            games.push(newGame);
-            localStorage.setItem('games', JSON.stringify(games));
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.add(newGame);
             
-            // تحديث القائمة
-            loadGamesForAdmin();
+            request.onerror = function(event) {
+                console.error('فشل إضافة اللعبة', event.target.error);
+                alert('حدث خطأ أثناء إضافة اللعبة');
+            };
             
-            // مسح الحقول
-            document.getElementById('gameName').value = '';
-            document.getElementById('gameCategory').value = '';
-            document.getElementById('gameDesc').value = '';
-            document.getElementById('gameThumbnail').value = '';
-            document.getElementById('gameUrl').value = '';
-            
-            alert('تمت إضافة اللعبة بنجاح!');
+            request.onsuccess = function() {
+                // تحديث القائمة
+                loadGamesForAdmin();
+                
+                // مسح الحقول
+                document.getElementById('gameName').value = '';
+                document.getElementById('gameCategory').value = '';
+                document.getElementById('gameDesc').value = '';
+                document.getElementById('gameThumbnail').value = '';
+                document.getElementById('gameUrl').value = '';
+                
+                alert('تمت إضافة اللعبة بنجاح!');
+            };
         }
         
         // حذف لعبة
-        function deleteGame(index) {
+        function deleteGame(id) {
             if (confirm('هل أنت متأكد من حذف هذه اللعبة؟')) {
-                const games = JSON.parse(localStorage.getItem('games')) || [];
-                games.splice(index, 1);
-                localStorage.setItem('games', JSON.stringify(games));
-                loadGamesForAdmin();
+                const transaction = db.transaction([STORE_NAME], 'readwrite');
+                const store = transaction.objectStore(STORE_NAME);
+                const request = store.delete(id);
+                
+                request.onerror = function(event) {
+                    console.error('فشل حذف اللعبة', event.target.error);
+                    alert('حدث خطأ أثناء حذف اللعبة');
+                };
+                
+                request.onsuccess = function() {
+                    loadGamesForAdmin();
+                    alert('تم حذف اللعبة بنجاح');
+                };
             }
         }
-        
-        // التحقق من حالة الدخول عند تحميل الصفحة
-        window.onload = function() {
-            const isLoggedIn = sessionStorage.getItem('isAdminLoggedIn');
-            
-            if (isLoggedIn === 'true') {
-                document.getElementById('loginContainer').style.display = 'none';
-                document.getElementById('adminPanel').style.display = 'block';
-                loadGamesForAdmin();
-            } else {
-                document.getElementById('loginContainer').style.display = 'flex';
-                document.getElementById('adminPanel').style.display = 'none';
-            }
-        };
     </script>
 </body>
 </html>
